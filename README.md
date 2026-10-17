@@ -38,7 +38,7 @@ GitHub Actions 在 macOS 与 Linux 运行这些检查。Coda 的面板渲染、�
 先在本仓库修改、验证并合并，再在 Coda 仓库运行：
 
 ```sh
-node scripts/sync-plugins.mjs update <提交> --repo coda-console/machine-stats
+node scripts/sync-plugins.mjs update <提交> --repo git@github-personal:coda-console/machine-stats.git
 node scripts/sync-plugins.mjs check
 ```
 
