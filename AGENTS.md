@@ -4,4 +4,4 @@
 - 入口只依赖插件自己的文件、Node 内置模块与 `package.json` 声明的依赖，不引用 Coda 后端。
 - `npm ci --ignore-scripts` 安装，`npm test` 验证；提交依赖变更时一起更新 `package-lock.json`。
 - 采集失败保留不可读状态，不把缺少传感器当作零。采集只在请求时执行，不启动常驻采样循环。
-- 用功能分支与中文 PR 交付。合并后在 Coda 仓库同步固定提交，见 README。
+- 用功能分支与中文 PR 交付。合并后更新 Coda 的 npm Git 依赖提交与锁文件，不向 Coda 回填插件源码，见 README。

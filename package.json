@@ -2,7 +2,7 @@
   "name": "machine-stats",
   "displayName": "机器负载",
   "description": "在资源页显示 CPU、内存、各磁盘、网络、温度、GPU、电池与风扇数值；在插件设置中选择显示项，打开或刷新时采样。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "contributes": {
     "panels": [
       {
@@ -42,5 +42,8 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "sample": "node scripts/stats.mjs"
-  }
+  },
+  "files": [
+    "scripts"
+  ]
 }
