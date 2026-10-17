@@ -1,0 +1,46 @@
+{
+  "name": "machine-stats",
+  "displayName": "机器负载",
+  "description": "在资源页显示 CPU、内存、各磁盘、网络、温度、GPU、电池与风扇数值；在插件设置中选择显示项，打开或刷新时采样。",
+  "version": "1.0.0",
+  "contributes": {
+    "panels": [
+      {
+        "id": "load",
+        "title": "机器负载",
+        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\"",
+        "displaySetting": "machine-stats.display"
+      }
+    ],
+    "configuration": {
+      "title": "机器负载",
+      "properties": {
+        "machine-stats.display": {
+          "title": "显示指标",
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {},
+          "description": "资源页显示的指标，按磁盘与网卡分别选择。"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "systeminformation": "5.33.15"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coda-console/machine-stats.git"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "sample": "node scripts/stats.mjs"
+  }
+}
