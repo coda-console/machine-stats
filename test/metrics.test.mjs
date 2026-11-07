@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { metrics, rate, bytes } from '../scripts/metrics.mjs';
+import { TYPES, resources, rate, bytes } from '../scripts/metrics.mjs';
 import { memoryFromMac, visibleVolumes, storageTree, batteryPower } from '../scripts/collect.mjs';
 const GB = 1e9;
 const sample = { cpu: .76, memory: { available: 12.8 * GB, total: 32 * GB, swap: GB }, temperature: null,
@@ -8,7 +8,7 @@ const sample = { cpu: .76, memory: { available: 12.8 * GB, total: 32 * GB, swap:
     { id: 'two', name: '外置盘', total: 2e12, available: 1.28e12, read: null, write: null }],
   network: [{ id: 'en0', name: 'en0', down: 8.42e6, up: 1.26e6, default: true }],
   gpus: [{ name: 'GPU', usage: 0, memory: 0 }], battery: { present: true, percent: 82, power: 24.8, charging: true }, fans: [{ id: 'left', name: '左侧', rpm: 0 }] };
-const read = metrics;
+const read = type => resources(type, sample);
 
 test('numeric samples divide counter deltas by actual elapsed seconds and never invent zero', () => {
   assert.equal(rate(100, 900, 2), 400);
@@ -20,14 +20,26 @@ test('numeric samples divide counter deltas by actual elapsed seconds and never 
   assert.equal(bytes(1.28e12), '1.3 TB');
 });
 
-test('missing hardware has an unavailable value; capacity bars always express remaining capacity', () => {
-  const items = read(sample), all = items.flatMap(i => i.items);
-  const temp = all.find(i => i.display.id === 'cpu-temperature');
-  assert.deepEqual([temp.type, temp.value, temp.fraction], ['stat', '暂不可读', undefined]);
-  assert.equal(all.find(i => i.display.id === 'disk:one:capacity').fraction, .386);
-  assert.equal(all.find(i => i.display.id === 'disk:two:read').value, '暂不可读');
-  assert.equal(all.find(i => i.display.id === 'fan:left').value, '0 RPM');
-  assert.ok(!read({ ...sample, battery: { present: false } }).some(i => i.title === '电池'));
+test('each type is its resources: capacity bars express what remains; what every machine has but cannot read says so; a part it lacks shows nothing', () => {
+  assert.deepEqual(read('cpu'), [{ values: [{ value: '空闲 76%', fraction: .76 }] }]);
+  assert.deepEqual(read('memory'), [{ values: [{ value: '11.9 GB / 29.8 GB', fraction: .4 }] }]);
+  assert.deepEqual(read('swap'), [{ values: [{ value: '已用 954 MB' }] }]);
+  assert.deepEqual(read('disks'), [{ name: 'Macintosh HD', values: [{ value: '386 GB / 1.0 TB', fraction: .386 }] },
+    { name: '外置盘', values: [{ value: '1.3 TB / 2.0 TB', fraction: .64 }] }]);
+  assert.deepEqual(read('disk-io')[1].values, [{ label: '读取', value: '暂不可读' }, { label: '写入', value: '暂不可读' }]);
+  assert.deepEqual(read('network'), [{ name: 'en0', values: [{ label: '下载', value: '8.4 MB/s' }, { label: '上传', value: '1.3 MB/s' }] }]);
+  assert.deepEqual(read('gpu'), [{ name: 'GPU', values: [{ label: '使用率', value: '0 %' }, { label: '显存已用', value: '0 B' }] }]);
+  assert.deepEqual(read('battery'), [{ values: [{ label: '电量', value: '82%', fraction: .82 }, { label: '状态', value: '正在充电' }, { label: '充电功率', value: '24.8 W' }] }]);
+  assert.deepEqual(read('fans'), [{ name: '左侧', values: [{ value: '0 RPM' }] }]);
+  // No sensor, no battery, no GPU here: those types show nothing; CPU, memory, disks and network never read say so.
+  assert.deepEqual(read('temperature'), []);
+  assert.deepEqual(resources('battery', { battery: { present: false } }), []);
+  assert.deepEqual(resources('gpu', {}), []);
+  for (const type of ['cpu', 'memory', 'disks', 'network']) assert.deepEqual(resources(type, { cpu: null, memory: null, disks: null, network: null }), [{ values: [{ value: '暂不可读' }] }], type);
+  assert.deepEqual(resources('memory', { memory: { available: null, total: GB } }), [{ values: [{ value: '暂不可读' }] }]);
+  // Tunnels and bridges are not a machine's own traffic.
+  assert.deepEqual(resources('network', { network: [{ id: 'utun3', name: 'utun3', down: 1, up: 1, default: false }] }), []);
+  assert.deepEqual(TYPES.filter(type => !resources(type, sample).length), ['temperature']);
 });
 
 test('macOS memory follows used memory and swap units, not just free pages', () => {

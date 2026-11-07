@@ -90,8 +90,9 @@ async function network() {
     default: !/^(utun|tun|tap|bridge|docker|veth|awdl|llw|anri)/.test(n.iface),
   }));
 }
-async function sample() {
-  const [net, disks] = await Promise.all([attempt(network), attempt(diskCounters, {})]);
+// The counters that need a two-second window, of what is asked for (`cpu`, `network`, `disks`).
+async function sample(wanted) {
+  const [net, disks] = await Promise.all([wanted.network ? attempt(network) : null, wanted.disks ? attempt(diskCounters, {}) : {}]);
   return { cpu: cpu(), network: net, disks, time: performance.now() };
 }
 async function gpu() {
@@ -146,16 +147,22 @@ async function fans() {
   }
   return entries;
 }
-export async function collect() {
-  // Inventory and slow optional sensors are read alongside the two-second counter sample, never in a timer loop.
-  const details = Promise.all([attempt(memory), attempt(volumes), attempt(() => si.cpuTemperature()), attempt(gpu, []), attempt(battery), attempt(fans, [])]);
-  const first = await sample();
-  await delay(2000);
-  const last = await sample(), seconds = (last.time - first.time) / 1000;
+// The readings of the resource types that ask for them (`types`, metrics.mjs TYPES), each read only for those, once: those
+// of counters over a two-second sample, the rest alongside it. Nothing runs in a timer loop.
+export async function collect(types) {
+  const wants = new Set(types), counted = { cpu: wants.has('cpu'), network: wants.has('network'), disks: wants.has('disk-io') };
+  const details = Promise.all([wants.has('memory') || wants.has('swap') ? attempt(memory) : null, wants.has('disks') || wants.has('disk-io') ? attempt(volumes) : null,
+    wants.has('temperature') ? attempt(() => si.cpuTemperature()) : null, wants.has('gpu') ? attempt(gpu, []) : [],
+    wants.has('battery') ? attempt(battery) : null, wants.has('fans') ? attempt(fans, []) : []]);
+  const timed = Object.values(counted).some(Boolean);
+  const first = timed ? await sample(counted) : null;
+  if (timed) await delay(2000);
+  const last = timed ? await sample(counted) : null, seconds = timed ? (last.time - first.time) / 1000 : 0;
   const [mem, disks, temperature, gpus, batt, fan] = await details;
-  const elapsed = last.cpu.total - first.cpu.total;
-  return { cpu: elapsed > 0 ? (last.cpu.idle - first.cpu.idle) / elapsed : null, memory: mem,
-    disks: disks?.map(d => ({ ...d, read: rate(first.disks[d.device]?.read, last.disks[d.device]?.read, seconds), write: rate(first.disks[d.device]?.write, last.disks[d.device]?.write, seconds) })) ?? null,
-    network: last.network?.map(n => { const before = first.network?.find(b => b.id === n.id); return { ...n, down: rate(before?.read, n.read, seconds), up: rate(before?.write, n.write, seconds) }; }) ?? null,
+  const elapsed = timed ? last.cpu.total - first.cpu.total : 0;
+  return { cpu: counted.cpu && elapsed > 0 ? (last.cpu.idle - first.cpu.idle) / elapsed : null, memory: mem,
+    disks: disks?.map(d => ({ ...d, read: counted.disks ? rate(first.disks[d.device]?.read, last.disks[d.device]?.read, seconds) : null,
+      write: counted.disks ? rate(first.disks[d.device]?.write, last.disks[d.device]?.write, seconds) : null })) ?? null,
+    network: last?.network?.map(n => { const before = first.network?.find(b => b.id === n.id); return { ...n, down: rate(before?.read, n.read, seconds), up: rate(before?.write, n.write, seconds) }; }) ?? null,
     temperature: temperature?.main, gpus, battery: batt, fans: fan };
 }
