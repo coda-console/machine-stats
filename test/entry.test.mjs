@@ -4,20 +4,29 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
-test('the entry reads this machine outside Coda and prints one panel with bounded meters and unique metric IDs', async () => {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CODA_')));
-  const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('../scripts/stats.mjs', import.meta.url))],
-    { cwd: tmpdir(), env, timeout: 30_000 });
-  const { items } = JSON.parse(stdout);
-  assert.ok(items.some(item => item.title === '处理器'));
-  assert.ok(items.some(item => item.title === '内存'));
-  const metrics = items.flatMap(item => item.items);
-  const ids = metrics.map(item => item.display.id);
-  assert.equal(new Set(ids).size, ids.length);
-  for (const item of metrics) {
-    assert.ok(['stat', 'meter'].includes(item.type));
-    assert.equal(typeof item.value, 'string');
-    if (item.type === 'meter') assert.ok(Number.isFinite(item.fraction) && item.fraction >= 0 && item.fraction <= 1);
+const entry = fileURLToPath(new URL('../scripts/stats.mjs', import.meta.url));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CODA_')));
+const run = args => promisify(execFile)(process.execPath, [entry, ...args], { cwd: tmpdir(), env, timeout: 30_000 });
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+test('each type the manifest declares reads this machine outside Coda as resources of names and bounded values', async () => {
+  const declared = manifest.contributes.resources;
+  assert.deepEqual(declared.filter(t => !t.hidden).map(t => t.title), ['CPU', '内存', '磁盘', '网络', '温度']);
+  const all = JSON.parse((await run(['--all'])).stdout);
+  assert.deepEqual(Object.keys(all), declared.map(t => t.id));
+  assert.equal(all.cpu.resources.length, 1); assert.equal(all.memory.resources.length, 1);
+  for (const [type, { resources }] of Object.entries(all)) for (const resource of resources) {
+    assert.ok(Object.keys(resource).every(key => ['name', 'values'].includes(key)), type);
+    assert.ok(resource.values.length >= 1 && resource.values.length <= 8, type);
+    for (const value of resource.values) {
+      assert.equal(typeof value.value, 'string', type);
+      if ('fraction' in value) assert.ok(Number.isFinite(value.fraction) && value.fraction >= 0 && value.fraction <= 1, type);
+    }
   }
+  // One type, as its command runs it: only what it shows.
+  const { stdout } = await run(['memory']);
+  assert.deepEqual(Object.keys(JSON.parse(stdout)), ['resources']);
+  await assert.rejects(run(['load']), /没有这个资源类型：load/);
 });

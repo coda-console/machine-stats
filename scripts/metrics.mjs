@@ -11,43 +11,47 @@ export function bytes(n, binary = false) {
 export function rate(before, after, seconds) {
   return valid(before) && valid(after) && after >= before && seconds > 0 ? (after - before) / seconds : null;
 }
-const stat = (id, label, value, on = false) => ({ type: 'stat', label, value, display: { id, default: on } });
 const number = (n, unit, decimals = 0) => valid(n) ? `${n.toFixed(decimals)} ${unit}` : '暂不可读';
 const speed = n => valid(n) ? `${bytes(n)}/s` : '暂不可读';
-function capacity(id, label, free, total, on = true, binary = false) {
-  if (!valid(free) || !valid(total) || !total) return stat(id, label, '暂不可读', on);
+const name = text => [...String(text)].slice(0, 80).join('');
+const UNREADABLE = [{ values: [{ value: '暂不可读' }] }];
+// What is left of a capacity, as a bar of it and the free of the total; unknown is unreadable, never an empty bar.
+function capacity(free, total, binary = false) {
+  if (!valid(free) || !valid(total) || !total) return { value: '暂不可读' };
   free = Math.min(free, total);
-  return { type: 'meter', label, value: `${bytes(free, binary)} / ${bytes(total, binary)}`, fraction: clamp(free / total),
-    note: `已用 ${bytes(total - free, binary)}`, display: { id, default: on } };
+  return { value: `${bytes(free, binary)} / ${bytes(total, binary)}`, fraction: clamp(free / total) };
 }
-const card = (title, items, subtitle) => ({ type: 'card', title: [...title].slice(0, 80).join(''), ...(subtitle ? { subtitle } : {}), items });
-export function metrics(data) {
-  const items = [];
-  const idle = data.cpu;
-  items.push(card('处理器', [valid(idle) ? { type: 'meter', label: 'CPU 空闲', value: `${Math.round(clamp(idle) * 100)}%`,
-    fraction: clamp(idle), note: `已用 ${Math.round((1 - clamp(idle)) * 100)}%`, display: { id: 'cpu', default: true } } : stat('cpu', 'CPU 空闲', '暂不可读', true)]));
-  const mem = data.memory ?? {};
-  items.push(card('内存', [capacity('memory', '内存可用', mem.available, mem.total, true, true), stat('swap', '交换空间已用', bytes(mem.swap, true))]));
-  for (const d of (data.disks ?? []).slice(0, 20)) {
-    items.push(card(d.name, [capacity(`disk:${d.id}:capacity`, '可用空间', d.available, d.total),
-      stat(`disk:${d.id}:read`, '读取速度', speed(d.read)), stat(`disk:${d.id}:write`, '写入速度', speed(d.write))], '读写为所在磁盘的采样平均'));
+
+// The resource types, in the order the manifest declares them (docs/plugins.md「资源」in Coda): each its own command, which
+// reads only what it shows (collect.mjs).
+export const TYPES = ['cpu', 'memory', 'swap', 'disks', 'disk-io', 'network', 'temperature', 'gpu', 'battery', 'fans'];
+
+// A type's resources from what was read: this machine's, so none names an identity. What every machine has (CPU, memory,
+// disks, network) says it cannot be read; a sensor or a part this machine does not have (swap, temperature, a GPU, a
+// battery, fans) shows nothing, which leaves the type off the page here.
+export function resources(type, data) {
+  switch (type) {
+    case 'cpu': return valid(data.cpu) ? [{ values: [{ value: `空闲 ${Math.round(clamp(data.cpu) * 100)}%`, fraction: clamp(data.cpu) }] }] : UNREADABLE;
+    case 'memory': return data.memory ? [{ values: [capacity(data.memory.available, data.memory.total, true)] }] : UNREADABLE;
+    case 'swap': return valid(data.memory?.swap) ? [{ values: [{ value: `已用 ${bytes(data.memory.swap, true)}` }] }] : [];
+    case 'disks': return data.disks ? data.disks.slice(0, 20).map(d => ({ name: name(d.name), values: [capacity(d.available, d.total)] })) : UNREADABLE;
+    case 'disk-io': return data.disks ? data.disks.slice(0, 20).map(d => ({ name: name(d.name), values: [{ label: '读取', value: speed(d.read) }, { label: '写入', value: speed(d.write) }] })) : UNREADABLE;
+    // The interfaces of a machine's own traffic; tunnels, bridges and the like are left out.
+    case 'network': return data.network ? data.network.filter(n => n.default).slice(0, 12).map(n => ({ name: name(n.name), values: [{ label: '下载', value: speed(n.down) }, { label: '上传', value: speed(n.up) }] })) : UNREADABLE;
+    case 'temperature': return valid(data.temperature) ? [{ name: 'CPU', values: [{ value: number(data.temperature, '°C') }] }] : [];
+    case 'gpu': return (data.gpus ?? []).slice(0, 4).map(g => {
+      const values = [valid(g.usage) && { label: '使用率', value: number(g.usage, '%') }, valid(g.memory) && { label: g.shared ? '共享内存已用' : '显存已用', value: bytes(g.memory, true) },
+        valid(g.temperature) && { label: '温度', value: number(g.temperature, '°C') }].filter(Boolean);
+      return { name: name(g.name), values: values.length ? values : [{ value: '暂不可读' }] };
+    });
+    case 'battery': {
+      const b = data.battery;
+      if (!b?.present) return [];
+      return [{ values: [valid(b.percent) ? { label: '电量', value: `${Math.round(b.percent)}%`, fraction: clamp(b.percent / 100) } : { label: '电量', value: '暂不可读' },
+        { label: '状态', value: b.charging ? '正在充电' : b.ac ? '已接电' : '正在使用电池' },
+        ...(valid(b.power) ? [{ label: b.charging ? '充电功率' : b.ac ? '电池功率' : '放电功率', value: number(b.power, 'W', 1) }] : [])] }];
+    }
+    case 'fans': return (data.fans ?? []).slice(0, 20).map(f => ({ name: name(f.name), values: [{ value: number(f.rpm, 'RPM') }] }));
   }
-  if (data.disks === null) items.push(card('磁盘', [stat('disks-unavailable', '可用空间', '暂不可读', true)]));
-  for (const n of (data.network ?? []).slice(0, 12)) items.push(card(`网络 · ${n.name}`, [
-    stat(`network:${n.id}:down`, '下载速度', speed(n.down), n.default), stat(`network:${n.id}:up`, '上传速度', speed(n.up), n.default)], '采样 2 秒平均'));
-  if (data.network === null) items.push(card('网络', [stat('network-unavailable', '网络速度', '暂不可读', true)]));
-  items.push(card('温度', [stat('cpu-temperature', 'CPU 温度', number(data.temperature, '°C'), true)]));
-  for (const [index, g] of (data.gpus ?? []).slice(0, 4).entries()) items.push(card(`GPU · ${g.name}`, [
-    stat(`gpu:${index}:usage`, '使用率', number(g.usage, '%')),
-    stat(`gpu:${index}:memory`, g.shared ? '共享内存已用' : '显存已用', bytes(g.memory, true)),
-    stat(`gpu:${index}:temperature`, 'GPU 温度', number(g.temperature, '°C'))]));
-  if (data.battery?.present) {
-    const b = data.battery;
-    items.push(card('电池', [valid(b.percent) ? { type: 'meter', label: '剩余电量', value: `${Math.round(b.percent)}%`, fraction: clamp(b.percent / 100),
-      note: b.charging ? '正在充电' : b.ac ? '已接电' : '正在使用电池', display: { id: 'battery', default: false } } : stat('battery', '剩余电量', '暂不可读'),
-      stat('battery-power', b.charging ? '充电功率' : b.ac ? '电池功率' : '放电功率', number(b.power, 'W', 1))]));
-  }
-  const fans = data.fans ?? [];
-  items.push(card('风扇', fans.length ? fans.slice(0, 8).map(f => stat(`fan:${f.id}`, f.name, number(f.rpm, 'RPM'))) : [stat('fan', '转速', '暂不可读')]));
-  return items;
+  return [];
 }
