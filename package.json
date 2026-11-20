@@ -3,74 +3,24 @@
   "displayName": "机器负载",
   "description": "CPU、内存、磁盘、网络与温度读数",
   "icon": { "symbol": "cpu", "color": "green" },
-  "version": "2.0.0",
+  "version": "2.1.0",
   "categories": ["机器与资源"],
   "contributes": {
-    "resources": [
-      {
-        "id": "cpu",
-        "title": "CPU",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" cpu"
-      },
-      {
-        "id": "memory",
-        "title": "内存",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" memory"
-      },
-      {
-        "id": "swap",
-        "title": "交换空间",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" swap",
-        "hidden": true
-      },
-      {
-        "id": "disks",
-        "title": "磁盘",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" disks"
-      },
-      {
-        "id": "disk-io",
-        "title": "磁盘读写",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" disk-io",
-        "hidden": true
-      },
-      {
-        "id": "network",
-        "title": "网络",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" network"
-      },
-      {
-        "id": "temperature",
-        "title": "温度",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" temperature"
-      },
-      {
-        "id": "gpu",
-        "title": "GPU",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" gpu",
-        "hidden": true
-      },
-      {
-        "id": "battery",
-        "title": "电池",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" battery",
-        "hidden": true
-      },
-      {
-        "id": "fans",
-        "title": "风扇",
-        "command": "node \"$CODA_PLUGIN_PATH/scripts/stats.mjs\" fans",
-        "hidden": true
-      }
-    ]
+    "protocolImplementations": ["coda/resource@1"],
+    "records": [{ "kind": "coda/resource@1", "command": "scripts/resource.mjs" }]
   },
   "dependencies": {
     "systeminformation": "5.33.15"
   },
+  "devDependencies": {
+    "@coda-console/plugin-check": "0.8.27",
+    "@coda-console/protocol": "6.17.0"
+  },
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "coda": 6
   },
   "repository": {
     "type": "git",
@@ -78,7 +28,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "sample": "node scripts/stats.mjs --all"
+    "sample": "node scripts/resource.mjs"
   },
   "files": [
     "scripts"

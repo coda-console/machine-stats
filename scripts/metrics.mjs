@@ -13,7 +13,8 @@ export function rate(before, after, seconds) {
 }
 const number = (n, unit, decimals = 0) => valid(n) ? `${n.toFixed(decimals)} ${unit}` : '暂不可读';
 const speed = n => valid(n) ? `${bytes(n)}/s` : '暂不可读';
-const name = text => [...String(text)].slice(0, 80).join('');
+// A name or label is one line of at most 80 characters: what the system calls a disk, a GPU or a fan may be neither.
+const name = text => [...String(text).replace(/\p{Cc}/gu, ' ').trim()].slice(0, 80).join('').trim();
 const UNREADABLE = [{ values: [{ value: '暂不可读' }] }];
 // What is left of a capacity, as a bar of it and the free of the total; unknown is unreadable, never an empty bar.
 function capacity(free, total, binary = false) {
@@ -22,9 +23,11 @@ function capacity(free, total, binary = false) {
   return { value: `${bytes(free, binary)} / ${bytes(total, binary)}`, fraction: clamp(free / total) };
 }
 
-// The resource types, in the order the manifest declares them (docs/plugins.md「资源」in Coda): each its own command, which
-// reads only what it shows (collect.mjs).
-export const TYPES = ['cpu', 'memory', 'swap', 'disks', 'disk-io', 'network', 'temperature', 'gpu', 'battery', 'fans'];
+// The resource types, in the order of their records, with the names the page shows (docs/plugins.md「资源」in Coda). The IDs
+// are what Coda remembers each machine's choice of types by (README.md), so they stay as they are.
+export const TITLES = { cpu: 'CPU', memory: '内存', swap: '交换空间', disks: '磁盘', 'disk-io': '磁盘读写', network: '网络', temperature: '温度',
+  gpu: 'GPU', battery: '电池', fans: '风扇' };
+export const TYPES = Object.keys(TITLES);
 
 // A type's resources from what was read: this machine's, so none names an identity. What every machine has (CPU, memory,
 // disks, network) says it cannot be read; a sensor or a part this machine does not have (swap, temperature, a GPU, a
@@ -54,4 +57,15 @@ export function resources(type, data) {
     case 'fans': return (data.fans ?? []).slice(0, 20).map(f => ({ name: name(f.name), values: [{ value: number(f.rpm, 'RPM') }] }));
   }
   return [];
+}
+
+// The `coda/resource@1` records of what was read (`key` and `spec.type` the type's ID; the schema is coda-protocol's
+// schemas/protocol/v1/resource.json): one for each type that has resources here. A type with none is left out, not written
+// empty: the page lists every type a record names under 「显示的资源」 even when it has nothing to show, so an empty one would
+// offer a switch for a battery this machine does not have. A resource with no name of its own (the CPU) is the machine's.
+export function records(data) {
+  return TYPES.flatMap(type => {
+    const list = resources(type, data).map(({ name: own, values }) => ({ ...(name(own ?? '') && { name: name(own) }), values, buttons: [] }));
+    return list.length ? [{ key: type, spec: { type, title: TITLES[type], resources: list } }] : [];
+  });
 }
