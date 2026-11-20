@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TYPES, resources, rate, bytes } from '../scripts/metrics.mjs';
+import { TYPES, TITLES, resources, records, rate, bytes } from '../scripts/metrics.mjs';
 import { memoryFromMac, visibleVolumes, storageTree, batteryPower } from '../scripts/collect.mjs';
+// plugin-check 0.8.27 does not list check/resources.mjs in its `exports`, so it is imported by its file.
+const { resourceRecordsProblem } = await import(new URL('../node_modules/@coda-console/plugin-check/check/resources.mjs', import.meta.url));
 const GB = 1e9;
 const sample = { cpu: .76, memory: { available: 12.8 * GB, total: 32 * GB, swap: GB }, temperature: null,
   disks: [{ id: 'one', name: 'Macintosh HD', total: 1e12, available: 386 * GB, read: 0, write: 2500 },
@@ -40,6 +42,35 @@ test('each type is its resources: capacity bars express what remains; what every
   // Tunnels and bridges are not a machine's own traffic.
   assert.deepEqual(resources('network', { network: [{ id: 'utun3', name: 'utun3', down: 1, up: 1, default: false }] }), []);
   assert.deepEqual(TYPES.filter(type => !resources(type, sample).length), ['temperature']);
+});
+
+test('the records are one coda/resource@1 record per type, all ten on a machine that has everything, held to the protocol schema', () => {
+  const full = records({ ...sample, temperature: 61 });
+  assert.deepEqual(full.map(r => r.key), ['cpu', 'memory', 'swap', 'disks', 'disk-io', 'network', 'temperature', 'gpu', 'battery', 'fans']);
+  assert.deepEqual(TYPES, full.map(r => r.key));
+  assert.equal(resourceRecordsProblem(full), null);
+  for (const { key, spec } of full) {
+    assert.equal(spec.type, key);
+    assert.equal(spec.title, TITLES[key]);
+    assert.ok(spec.resources.every(r => Array.isArray(r.buttons) && !r.buttons.length), key);
+  }
+  assert.deepEqual(full.find(r => r.key === 'cpu').spec.resources, [{ values: [{ value: '空闲 76%', fraction: .76 }], buttons: [] }]);
+  assert.deepEqual(full.find(r => r.key === 'temperature').spec.resources, [{ name: 'CPU', values: [{ value: '61 °C' }], buttons: [] }]);
+});
+
+test('a type this machine has no part for has no record; what every machine has but cannot read says so; names stay one line', () => {
+  assert.deepEqual(records(sample).map(r => r.key), TYPES.filter(type => type !== 'temperature'));
+  const unread = records({ cpu: null, memory: null, disks: null, network: null });
+  assert.deepEqual(unread.map(r => r.key), ['cpu', 'memory', 'disks', 'disk-io', 'network']);
+  assert.ok(unread.every(r => r.spec.resources.length === 1 && r.spec.resources[0].values[0].value === '暂不可读'));
+  assert.equal(resourceRecordsProblem(unread), null);
+  // What the system calls a disk, a GPU or a fan may be blank or run over lines: the schema takes one line with something in it.
+  const odd = records({ ...sample, disks: [{ id: 'x', name: '  ', total: GB, available: GB / 2 }], gpus: [{ name: 'Radeon\n Pro', usage: 3 }],
+    fans: [{ id: 'f', name: '\u0007', rpm: 1200 }] });
+  assert.equal(resourceRecordsProblem(odd), null);
+  assert.deepEqual(odd.find(r => r.key === 'disks').spec.resources, [{ values: [{ value: '500 MB / 1.0 GB', fraction: .5 }], buttons: [] }]);
+  assert.equal(odd.find(r => r.key === 'gpu').spec.resources[0].name, 'Radeon  Pro');
+  assert.equal(odd.find(r => r.key === 'fans').spec.resources[0].name, undefined);
 });
 
 test('macOS memory follows used memory and swap units, not just free pages', () => {
