@@ -48,9 +48,9 @@ npm run sample
 
 `sample` 运行记录命令，打印这台机器的 `coda/resource@1` 记录（`[{ "key": …, "spec": … }]`）；它不需要运行 Coda 后端。
 `scripts/collect.mjs` 负责系统采集，`scripts/metrics.mjs` 将读数转换为记录，`scripts/resource.mjs` 是清单 `contributes.records` 里的记录命令。
-单元测试覆盖计数器增量、缺失读数、macOS 内存、卷发现、APFS 磁盘归属、电池功率，以及十个类型的记录；记录的校验用检查包（`@coda-console/plugin-check`）里宿主校验记录的那一份：
+单元测试覆盖计数器增量、缺失读数、macOS 内存、卷发现、APFS 磁盘归属、电池功率，以及十个类型的记录；记录的校验用协议包（`@coda-console/protocol/validate`）里宿主校验记录的那一份：
 协议 schema、`spec.type` 与 `key` 相同、单条不超过 64 KiB。入口测试按宿主运行记录命令的方式真实读取当前机器。
-`npx coda-plugin-check .` 查清单并运行一次记录命令。
+Coda 宿主的 `coda plugin check .` 查清单并运行一次记录命令。
 GitHub Actions 在 macOS 与 Linux 运行这些检查。Coda 的资源页渲染、显示的资源与安装更新仍在 Coda 仓库验证。
 
 ## Coda 的依赖引用

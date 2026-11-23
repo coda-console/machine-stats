@@ -2,13 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { resourceRecordsProblem } from '@coda-console/protocol/validate';
 import { TITLES, TYPES } from '../scripts/metrics.mjs';
 
-// plugin-check 0.8.27 does not list check/resources.mjs in its `exports`, so it is imported by its file.
-const { resourceRecords } = await import(new URL('../node_modules/@coda-console/plugin-check/check/resources.mjs', import.meta.url));
+const run = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+// Runs the command the manifest declares for `kind` as the host does (env as given, CODA_RECORD_KIND set, time limited)
+// and returns its stdout parsed as JSON.
+async function resourceRecords(kind, env) {
+  const { command } = manifest.contributes.records.find(record => record.kind === kind);
+  const { stdout } = await run(resolve(root, command), { cwd: root, env: { ...env, CODA_RECORD_KIND: kind }, timeout: 60_000, maxBuffer: 1024 * 1024 });
+  return JSON.parse(stdout);
+}
 
 test('the manifest has Coda write the resource records by one command, and declares no resources of its own', () => {
   assert.equal(manifest.engines.coda, 6);
@@ -22,8 +32,9 @@ test('the manifest has Coda write the resource records by one command, and decla
 test('the record command, as the host runs it, prints coda/resource@1 records of this machine: what every machine has, each type once, in order', async () => {
   const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CODA_'))), CODA_PLUGIN_PATH: root,
     PATH: `${dirname(process.execPath)}:${process.env.PATH}` };
-  // resourceRecords holds the output to the protocol schema, the 64 KiB and the key rules the host holds it to.
-  const records = await resourceRecords(root, { env });
+  const records = await resourceRecords('coda/resource@1', env);
+  // The output is held to the protocol schema, the 64 KiB and the key rules the host holds it to.
+  assert.equal(resourceRecordsProblem(records), null);
   const keys = records.map(r => r.key);
   assert.deepEqual(keys, TYPES.filter(type => keys.includes(type)));
   for (const type of ['cpu', 'memory', 'disks', 'disk-io', 'network']) assert.ok(keys.includes(type), type);
