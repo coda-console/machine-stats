@@ -13,8 +13,7 @@
     "systeminformation": "5.33.15"
   },
   "devDependencies": {
-    "@coda-console/plugin-check": "0.8.27",
-    "@coda-console/protocol": "6.17.0"
+    "@coda-console/protocol": "6.23.0"
   },
   "private": true,
   "type": "module",

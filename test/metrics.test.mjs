@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TYPES, TITLES, resources, records, rate, bytes } from '../scripts/metrics.mjs';
 import { memoryFromMac, visibleVolumes, storageTree, batteryPower } from '../scripts/collect.mjs';
-// plugin-check 0.8.27 does not list check/resources.mjs in its `exports`, so it is imported by its file.
-const { resourceRecordsProblem } = await import(new URL('../node_modules/@coda-console/plugin-check/check/resources.mjs', import.meta.url));
+import { resourceRecordsProblem } from '@coda-console/protocol/validate';
 const GB = 1e9;
 const sample = { cpu: .76, memory: { available: 12.8 * GB, total: 32 * GB, swap: GB }, temperature: null,
   disks: [{ id: 'one', name: 'Macintosh HD', total: 1e12, available: 386 * GB, read: 0, write: 2500 },
